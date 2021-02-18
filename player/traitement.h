@@ -47,7 +47,7 @@ using namespace ovxio;
 #endif
 
 
-
+#define SIZE_PYM 3
 
 bool flag_capture;
 
@@ -58,6 +58,29 @@ bool flag_capture;
 
 void HelloWorld(){
 	printf("\nHello there !");
+}
+
+//Images entrée et sortie en U8
+//renvoie la petite image
+//rapport =4 pour une pym de taille 3
+//vx_pyramid pympym = vxCreatePyramid(context, SIZE_PYM, VX_SCALE_PYRAMID_HALF, config.frameWidth, config.frameHeight, VX_DF_IMAGE_S16);
+void Pyramin(const FrameSource::Parameters& config, ContextGuard& context, const vx_image& InImg, vx_image& OutImg, vx_pyramid& pympym, int rapport )
+{
+  vx_image tmpFrame = vxCreateImage(context,config.frameWidth/rapport);
+  vxuLaplacianPyramid(context,InImg,pympym,tmpFrame);
+  vxuConvertDepth(context,tmpFrame,OutImg,VX_CONVERT_POLICY_WRAP,0);
+  vxReleaseImage(&tmpFrame);
+}
+
+//Images entrée et sorties en U8
+//renvoie la grande image
+//rapport =4 pour pyramide taille 3
+void PyramOut(const FrameSource::Parameters& config, ContextGuard& context, const vx_image& InImg, vx_image& OutImg, vx_pyramid& pympym, int rapport)
+{
+  vx_image tmpFrame = vxCreateImage(context, config.frameWidth/rapport);
+  vxuConvertDepth(context, InImg, tmpFrame, VX_CONVERT_POLICY, 0);
+  vxuLaplacianReconstruct(context, pympym, tmpFrame, OutImg);
+  vxReleaseImage(&tmpFrame);
 }
 
 /** Fonction d'initialisation des differents parametres */
