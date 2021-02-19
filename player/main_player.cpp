@@ -110,7 +110,7 @@ int main(int argc, char** argv)
     try
     {
         Application &app = Application::get();
-        std::string input = app.findSampleFilePath("pedestrians.mp4");
+        std::string input = app.findSampleFilePath("cars.mp4");
 
         app.setDescription("This sample plays a video from video-file or camera");
         app.addOption('s', "source", "Input URI", nvxio::OptionHandler::string(&input));

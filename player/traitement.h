@@ -1,4 +1,4 @@
-
+/*
 #pragma once
 
 #include <iostream>
@@ -45,15 +45,18 @@ using namespace nvxio;
 using namespace nvxio;
 using namespace ovxio;
 #endif
+*/
 
+
+#pragma once
+#include "headers.h"
+#include "fonctions_utilitaires.h"
+#include "classification.h"
 
 #define SIZE_PYM 3
 
+
 bool flag_capture;
-
-
-
-
 
 
 void HelloWorld(){
@@ -82,7 +85,6 @@ void PyramOut(const FrameSource::Parameters& config, ContextGuard& context, cons
   vxuLaplacianReconstruct(context, pympym, tmpFrame, OutImg);
   vxReleaseImage(&tmpFrame);
 }
-
 /** Fonction d'initialisation des differents parametres */
 void InitTraitement(ContextGuard& context){
 	flag_capture = true;
@@ -95,12 +97,90 @@ void InputTraitement(vx_char c){
 	}
 }
 
+//frame RGBX, oldFrame RGBX, old_thresh U8, outputFrame RGBX
+void newContour(vx_context context, vx_uint32 Width, vx_uint32 Height, vx_image frame, vx_image oldFrame, vx_image old_thresh_GS, vx_image outputFrame)
+{
+  vx_threshold thr = vxCreateThreshold(context, VX_THRESHOLD_TYPE_RANGE, VX_TYPE_UINT8); 
+  InitThreshHold(thr, (vx_uint8)75);
+  vx_threshold thrR = vxCreateThreshold(context, VX_THRESHOLD_TYPE_RANGE, VX_TYPE_UINT8);
+  vx_threshold thrG = vxCreateThreshold(context, VX_THRESHOLD_TYPE_RANGE, VX_TYPE_UINT8);
+  vx_threshold thrB = vxCreateThreshold(context, VX_THRESHOLD_TYPE_RANGE, VX_TYPE_UINT8);
+  vx_image buffer_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image frameR_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image frameG_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image frameB_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image oldframeR_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image oldframeG_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image oldframeB_U8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image thresh_R = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image thresh_B = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image thresh_G = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image thresh_GS = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  vx_image thresh_RGBX = vxCreateImage(context, Width, Height, VX_DF_IMAGE_RGBX);
+  vx_float32 meanR, meanG, meanB, devR, devG, devB;
+
+  //extraction et normalization de l'image actuelle
+  vxuChannelExtract(context, frame, VX_CHANNEL_R, frameR_U8);
+  vxuEqualizeHist(context, frameR_U8, buffer_U8); nvxuCopyImage(context, buffer_U8, frameR_U8); vxuMeanStdDev(context, frameR_U8, &meanR, &devR);
+  vxuChannelExtract(context, frame, VX_CHANNEL_G, frameG_U8);
+  vxuEqualizeHist(context, frameR_U8, buffer_U8); nvxuCopyImage(context, buffer_U8, frameR_U8); vxuMeanStdDev(context, frameG_U8, &meanG, &devG);
+  vxuChannelExtract(context, frame, VX_CHANNEL_B, frameB_U8);
+  vxuEqualizeHist(context, frameR_U8, buffer_U8); nvxuCopyImage(context, buffer_U8, frameR_U8); vxuMeanStdDev(context, frameB_U8, &meanB, &devB);
+
+  //extraction et normalization de l'ancienne image
+  vxuChannelExtract(context, oldFrame, VX_CHANNEL_R, oldframeR_U8);
+  vxuEqualizeHist(context, oldframeR_U8, buffer_U8); nvxuCopyImage(context, buffer_U8, oldframeR_U8);
+  vxuChannelExtract(context, oldFrame, VX_CHANNEL_G, oldframeG_U8);
+  vxuEqualizeHist(context, oldframeR_U8, buffer_U8); nvxuCopyImage(context, buffer_U8, oldframeR_U8);
+  vxuChannelExtract(context, oldFrame, VX_CHANNEL_B, oldframeB_U8);
+  vxuEqualizeHist(context, oldframeR_U8, buffer_U8); nvxuCopyImage(context, buffer_U8, oldframeR_U8);
+
+  //difference entre chaque canal e chaque image et seuillage avec pour seuil la moitie de la moyenne de l'image
+  vxuAbsDiff(context, frameR_U8, oldframeR_U8, buffer_U8); InitThreshHold(thrR, (vx_uint8)(0.5f * meanR)); vxuThreshold(context, buffer_U8, thrR, thresh_R);
+  vxuAbsDiff(context, frameG_U8, oldframeG_U8, buffer_U8); InitThreshHold(thrG, (vx_uint8)(0.5f * meanG)); vxuThreshold(context, buffer_U8, thrG, thresh_G);
+  vxuAbsDiff(context, frameB_U8, oldframeB_U8, buffer_U8); InitThreshHold(thrB, (vx_uint8)(0.5f * meanB)); vxuThreshold(context, buffer_U8, thrB, thresh_B);
+  vxuChannelExtract(context, oldFrame, VX_CHANNEL_A, buffer_U8); vxuChannelCombine(context, thresh_R, thresh_G, thresh_B, buffer_U8, thresh_RGBX);
+  vxuColorConvert(context, thresh_RGBX, buffer_U8); nvxuCopyImage(context, buffer_U8, thresh_GS);
+
+  //fermeture
+  vxuDilate3x3(context, thresh_GS, buffer_U8); nvxuCopyImage(context, buffer_U8, thresh_GS);
+  vxuErode3x3(context, thresh_GS, buffer_U8); nvxuCopyImage(context, buffer_U8, thresh_GS);
+
+  //seuillage
+  vxuThreshold(context, thresh_GS, thr, buffer_U8); nvxuCopyImage(context, buffer_U8, thresh_GS);
+
+  //OU logique entre l'ancienne image et la nouvelle
+  vxuOr(context, thresh_GS, old_thresh_GS, buffer_U8);
+  nvxuCopyImage(context, thresh_GS, old_thresh_GS);
+  nvxuCopyImage(context, buffer_U8, thresh_GS);
+
+  //dilatation pour fermer les contours
+  vxuDilate3x3(context, thresh_GS, buffer_U8); nvxuCopyImage(context, buffer_U8, thresh_GS);
+  vxuDilate3x3(context, thresh_GS, buffer_U8); nvxuCopyImage(context, buffer_U8, thresh_GS);
+  vxuColorConvert(context, thresh_GS, outputFrame);
+
+  vxReleaseThreshold(&thr);
+  vxReleaseThreshold(&thrR);
+  vxReleaseThreshold(&thrG);
+  vxReleaseThreshold(&thrB);
+  vxReleaseImage(&buffer_U8);
+  vxReleaseImage(&frameR_U8);
+  vxReleaseImage(&frameG_U8);
+  vxReleaseImage(&frameB_U8);
+  vxReleaseImage(&oldframeR_U8);
+  vxReleaseImage(&oldframeG_U8);
+  vxReleaseImage(&oldframeB_U8);
+  vxReleaseImage(&thresh_R);
+  vxReleaseImage(&thresh_G);
+  vxReleaseImage(&thresh_B);
+  vxReleaseImage(&thresh_GS);
+  vxReleaseImage(&thresh_RGBX);
+}
+
 /** Traitement par soustraction de fond */
-void Traitement_SoustractionDeFond(const FrameSource::Parameters& config, ContextGuard& context, vx_image& dstImg, const vx_image& frame){
-    printf("\nProcessus : Background Substraction");
-    
-    //Init
-    vx_rectangle_t l_rect, r_rect;
+void Traitement_SoustractionDeFond(const FrameSource::Parameters& config, ContextGuard& context, vx_image& dstImg, const vx_image& frame, vx_image& output){
+  //Init
+  vx_rectangle_t l_rect, r_rect;
 	l_rect.start_x = 0;  l_rect.start_y = 0; l_rect.end_x = config.frameWidth; l_rect.end_y = config.frameHeight;
 	r_rect.start_x = config.frameWidth; r_rect.start_y = 0; r_rect.end_x = 2 * config.frameWidth; r_rect.end_y = config.frameHeight;
 	vx_image left_image = vxCreateImageFromROI(dstImg, &l_rect);
@@ -132,10 +212,9 @@ void Traitement_SoustractionDeFond(const FrameSource::Parameters& config, Contex
     vxSetThresholdAttribute(thresh, VX_THRESHOLD_THRESHOLD_VALUE, &thresh_value, sizeof(vx_int32));
     vxuThreshold(context, frameResult, thresh, tmpFrame);
 
-    //nvxuCopyImage(context, tmpFrame, frameResult);
-
     vxuColorConvert(context, tmpFrame, right_image);
     vxuColorConvert(context, defaultFrameU8, left_image);
+    nvxuCopyImage(context, tmpFrame, output);
     
     //Free
     vxReleaseImage(&frameU8);
@@ -145,158 +224,41 @@ void Traitement_SoustractionDeFond(const FrameSource::Parameters& config, Contex
     vxReleaseThreshold(&thresh);
 }
 
-/** Fonction test qui genere une image de synthese ou lit une image de test */
-void FausseImage(const FrameSource::Parameters& config, ContextGuard& context, Application &app, vx_image& image){
-  vx_image base_image;
-  
-  std::string fileName1 = app.findSampleFilePath("synthese2.jpg");
-  //cv::Mat cvmat = nvx_cv::VXImageToCVMatMapper(base_image, 0, 0, VX_READ_AND_WRITE, VX_MEMORY_TYPE_HOST).getMat(); 
-  cv::Mat cvmat = cv::imread(fileName1, cv::IMREAD_GRAYSCALE);
-  base_image = nvx_cv::createVXImageFromCVMat(context, cvmat);
-  vxuScaleImage(context, base_image, image, NVXCU_INTERPOLATION_TYPE_BILINEAR);
-  vxReleaseImage(&base_image);
-  cvmat.release();
-  
-  
-  
-  
-  //cv::gpu::GpuMat cv_src1;
-  //= cv::imread(fileName1, cv::IMREAD_GRAYSCALE);
-  //base_image = nvx_cv::createVXImageFromCVGpuMat(context, cv_src1);
-  //nvxcu_border_t border = {0, NVXCU_BORDER_MODE_REPLICATE};
-  //nvxcu_exec_target_t exec = {};
-  //nvxcuScaleImage(base_image, image, NVXCU_INTERPOLATION_TYPE_BILINEAR, border);
-  
-}
-
-/** Fonction qui recoit une image seuillee et affiche dans la console les descripteurs*/
-void FiltrageObjets(const FrameSource::Parameters& config, ContextGuard& context, Application &app, vx_image& image){
-  printf("\n Filtrage des objets");
-  /// Init
-  vx_image base = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
-  //FausseImage(config, context, base);
-    
-  /// Copy to right place
-  vx_rectangle_t l_rect, r_rect;
-  l_rect.start_x = 0;  l_rect.start_y = 0; l_rect.end_x = config.frameWidth; l_rect.end_y = config.frameHeight;
-  r_rect.start_x = config.frameWidth; r_rect.start_y = 0; r_rect.end_x = 2 * config.frameWidth;   r_rect.end_y = config.frameHeight;
-  vx_image left_image = vxCreateImageFromROI(image, &l_rect);
-  vx_image right_image = vxCreateImageFromROI(image, &r_rect);
-  FausseImage(config, context, app, base);
-  vxuColorConvert(context, base, left_image);
-
-  /// Analyse
-  cv::Mat cvmat = nvx_cv::VXImageToCVMatMapper(base, 0, 0, VX_READ_AND_WRITE, VX_MEMORY_TYPE_HOST).getMat();
-  
-  //cv::cvtColor(cvmat, cvmat, CV_BGR2GRAY);
-  cv::threshold(cvmat, cvmat, 50, 255, CV_THRESH_BINARY);
-  std::vector<std::vector<cv::Point> > contours;
-  cv::Mat contourOutput = cvmat.clone();
-  cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
-
-  //Draw the contours
-  cv::Mat contourImage(cvmat.size(), CV_8UC3, cv::Scalar(0, 0, 0));
-  cv::Scalar colors[3];
-  colors[0] = cv::Scalar(255, 0, 0);
-  colors[1] = cv::Scalar(0, 255, 0);
-  colors[2] = cv::Scalar(0, 0, 255);
-  for (size_t idx = 0; idx < contours.size(); idx++) {
-    cv::drawContours(contourImage, contours, idx, colors[idx % 3]);
-  }
-
-  base = nvx_cv::createVXImageFromCVMat(context, contourImage);
-  vxuColorConvert(context, base, right_image);
-  
-  
-  //Prepare the image for findContours
-  //cv::cvtColor(cvmat, cvmat, CV_BGR2GRAY);
-  //cv::threshold(cvmat, cvmat, 50, 255, CV_THRESH_BINARY);
-
-  //Find the contours. Use the contourOutput Mat so the original image doesn't get overwritten
-  /*std::vector<std::vector<cv::Point> > contours;
-  cv::Mat contourOutput = cvmat.clone();
-  cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
-
-  //Draw the contours
-  cv::Mat contourImage(cvmat.size(), CV_8UC3, cv::Scalar(0, 0, 0));
-  cv::Scalar colors[3];
-  colors[0] = cv::Scalar(255, 0, 0);
-  colors[1] = cv::Scalar(0, 255, 0);
-  colors[2] = cv::Scalar(0, 0, 255);
-  for (size_t idx = 0; idx < contours.size(); idx++) {
-    cv::drawContours(contourImage, contours, idx, colors[idx % 3]);
-  }*/
-
-  
-
-	/// Free
-  //contourImage.release();
-	vxReleaseImage(&base);
-  cvmat.release();
-}
-
-
-void InitThreshHold(vx_threshold thr, vx_uint8 threshold = 25)
-{
-  vx_int32 true_value = 255, false_value = 0, lower_value = threshold, upper_value = 150;
-  vxSetThresholdAttribute(thr, VX_THRESHOLD_THRESHOLD_LOWER, &lower_value, sizeof(vx_int32));
-  vxSetThresholdAttribute(thr, VX_THRESHOLD_THRESHOLD_UPPER, &upper_value, sizeof(vx_int32));
-  vxSetThresholdAttribute(thr, VX_THRESHOLD_TRUE_VALUE, &true_value, sizeof(vx_int32));
-  vxSetThresholdAttribute(thr, VX_THRESHOLD_FALSE_VALUE, &false_value, sizeof(vx_int32));
-}
-
-//oldFrame XRGB, frame XRGB, outputFrame U8, newOldFrame XRGB, (lower) threshold [0,255]
-bool Seuillage(vx_context context, FrameSource::Parameters config, vx_image oldframe, vx_image frame, vx_image outputFrame, vx_image newOldFrame, vx_float32 oldWeight = 0.1, vx_uint8 threshold = 25)
-{
-  //initialisation
-  vx_uint8 one = 1;
-  vx_threshold thr = vxCreateThreshold(context, VX_THRESHOLD_TYPE_RANGE, VX_TYPE_UINT8);
-  vx_image frame_U8, oldFrame_U8, buffer_U8, buffer_U8_2, ones; 
-  buffer_U8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
-  buffer_U8_2 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
-  frame_U8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
-  oldFrame_U8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);     
-  ones = vxCreateUniformImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8, (vx_pixel_value_t*)&one);
-  InitThreshHold(thr, threshold);
-
-  //conversion rgb->niveau de gris
-  vxuColorConvert(context, frame, frame_U8);
-  vxuColorConvert(context, oldframe, oldFrame_U8);
-
-  //normalization
-  vxuEqualizeHist(context, frame_U8, buffer_U8);
-  vxuEqualizeHist(context, oldFrame_U8, buffer_U8_2);
-
-  //valeur absolu de la difference
-  vxuAbsDiff(context, buffer_U8, buffer_U8_2, frame_U8);
-
-  //seuillage
-  vxuThreshold(context, frame_U8, thr, oldFrame_U8);
-  vxuDilate3x3(context, oldFrame_U8, frame_U8);
-  vxuErode3x3(context, frame_U8, outputFrame);
-
-  //moyenne temporelle
-  vxuMultiply(context, buffer_U8, ones, (float)(1 - oldWeight), VX_CONVERT_POLICY_WRAP, VX_ROUND_POLICY_TO_ZERO, frame_U8);
-  vxuMultiply(context, buffer_U8_2, ones, (float)oldWeight, VX_CONVERT_POLICY_WRAP, VX_ROUND_POLICY_TO_ZERO, oldFrame_U8);
-  vxuAdd(context, frame_U8, oldFrame_U8, VX_CONVERT_POLICY_WRAP, buffer_U8);
-  vxuColorConvert(context, buffer_U8, newOldFrame);
-
-  //destruction
-  vxReleaseImage(&frame_U8);
-  vxReleaseImage(&oldFrame_U8);
-  vxReleaseImage(&buffer_U8);
-  vxReleaseImage(&buffer_U8_2);
-  vxReleaseImage(&ones);
-  vxReleaseThreshold(&thr);
-  return 1;
-}
-
-
 
 /** Fonction main qui appelle les autres traitements */
 void MainTraitement(const FrameSource::Parameters& config, ContextGuard& context, Application &app, vx_image& dstImg, const vx_image& frame){
-    //Traitement_SoustractionDeFond(config, context, dstImg, frame);
-    FiltrageObjets(config, context, app, dstImg);
+  //vx_image image_traitee = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+  //Traitement_SoustractionDeFond(config, context, dstImg, frame, image_traitee);
+  //descripteur_objet* desc = 0;
+  //Test_Classification(config, context, app, dstImg, desc);
+
+
+  /// Init
+  //vx_rectangle_t l_rect, r_rect;
+  //l_rect.start_x = 0;  l_rect.start_y = 0; l_rect.end_x = config.frameWidth; l_rect.end_y = config.frameHeight;
+  //r_rect.start_x = config.frameWidth; r_rect.start_y = 0; r_rect.end_x = 2 * config.frameWidth;   r_rect.end_y = config.frameHeight;
+  //vx_image base = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+  //vx_image left_image = vxCreateImageFromROI(dstImg, &l_rect);
+  //vx_image right_image = vxCreateImageFromROI(dstImg, &r_rect);
+  
+  static vx_image image_n_1 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_RGBX);
+  static vx_image old_thresh_GS = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+  static vx_image output_rgb = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_RGBX);
+
+  /// Execution
+  newContour(context, config.frameWidth, config.frameHeight, frame, image_n_1, old_thresh_GS, output_rgb);
+  vx_image tmp = Classification_image_traitee(config, context, output_rgb);
+
+  /// Display
+  SubplotCopy(context, output_rgb, dstImg, 2, 1, 0);
+  SubplotCopy(context, tmp, dstImg, 2, 1, 1);
+  //SubplotCopy(context, output_rgb, dstImg, 2, 1, i);
+
+
+  //nvxuCopyImage(context, output_rgb, left_image);
+  //nvxuCopyImage(context, Classification_image_traitee(config, context, output_rgb), right_image);
+  /// End
+  nvxuCopyImage(context, frame, image_n_1);
 }
 
 
