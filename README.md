@@ -18,8 +18,8 @@
    <li>Extraction et normalisation de l'image actuelle 6ms </li>
    <li>Extraction et normalisation de l'ancienne image 4ms </li>
    <li>Difference entre chaque canal de chaque image et seuil par la moitie de la moyenne de l'image 1.9ms</li>
-   <li>Fermeture 0.2 ms</li>
-   <li>Seuillage 0.14 ms</li>
+   <li>Fermeture 0.2ms</li>
+   <li>Seuillage 0.14ms</li>
    <li>Ou logique entre l'ancienne image et la nouvelle 0.1ms </li>
    <li>Dilatation pour fermer les contours 0.8ms</li>
   </ul>
@@ -33,10 +33,31 @@
    <li>Extraction et normalisation de l'image actuelle 4.6ms </li>
    <li>Extraction et normalisation de l'ancienne image 2.2ms </li>
    <li>Difference entre chaque canal de chaque image et seuil par la moitie de la moyenne de l'image 0.8ms</li>
-   <li>Fermeture 0.2 ms</li>
-   <li>Seuillage 0.12 ms</li>
+   <li>Fermeture 0.2ms</li>
+   <li>Seuillage 0.12ms</li>
    <li>Ou logique entre l'ancienne image et la nouvelle 0.15ms </li>
    <li>Dilatation pour fermer les contours 0.81ms</li>
+  </ul>
+ </ul>
+ </ul>
+ 
+ 
+ ## Spec Timer Tegra
+ 
+ <ul>
+ <li>Fonction contour opti</li>
+ <ul>
+  <li>Durée de la fonction 72.9ms</li>
+  <li>Intérieur</li>
+  <ul>
+   <li>Assignation des valeurs 0.04ms</li>
+   <li>Extraction et normalisation de l'image actuelle 35ms </li>
+   <li>Extraction et normalisation de l'ancienne image 15.54ms </li>
+   <li>Difference entre chaque canal de chaque image et seuil par la moitie de la moyenne de l'image 7.5ms</li>
+   <li>Fermeture 3.9ms</li>
+   <li>Seuillage 2.2ms</li>
+   <li>Ou logique entre l'ancienne image et la nouvelle 2.6ms</li>
+   <li>Dilatation pour fermer les contours 7.81ms</li>
   </ul>
  </ul>
  </ul>
