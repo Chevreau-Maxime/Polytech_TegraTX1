@@ -45,7 +45,15 @@ using namespace nvxio;
 using namespace ovxio;
 #endif
 
+#define DESCRIPTOR_OK 0
+#define DESCRIPTOR_SIZE_PB 1
+#define DESCRIPTOR_RATIO_PB 2
 
+#define NB_SOURCE_VIDEOS 3 
+bool flag_capture;
+char** source_videos;
+int selected_video;
+int display_mode;
 
 
 struct descripteur_objet {
@@ -54,5 +62,7 @@ struct descripteur_objet {
   float spacing; // distance from mid
   float spacing_irregularity; //avg diff from average spacing
 };
+
+
 
 
