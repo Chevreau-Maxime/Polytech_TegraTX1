@@ -1,0 +1,127 @@
+#pragma once
+#include "headers.h"
+#include "fonctions_utilitaires.h"
+
+
+/** Fonction qui recoit une image seuillee et affiche dans la console les descripteurs*/
+void FiltrageObjets(const FrameSource::Parameters& config, ContextGuard& context, Application &app, vx_image input, const vx_image& image, descripteur_objet* desc, bool debug=false){
+  static int countimage = 0;
+  /// Init
+  vx_image base = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+
+  /// Copy to right place
+  vx_rectangle_t l_rect, r_rect;
+  l_rect.start_x = 0;  l_rect.start_y = 0; l_rect.end_x = config.frameWidth; l_rect.end_y = config.frameHeight;
+  r_rect.start_x = config.frameWidth; r_rect.start_y = 0; r_rect.end_x = 2 * config.frameWidth;   r_rect.end_y = config.frameHeight;
+  vx_image left_image = vxCreateImageFromROI(image, &l_rect);
+  vx_image right_image = vxCreateImageFromROI(image, &r_rect);
+  //vx_uint8 initpix = 0;
+  //vx_image tmp = vxCreateUniformImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8, (vx_pixel_value_t*)&initpix);
+  vx_image tmp = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+  printf("\n1");
+  ResetImage(config, context, tmp);
+  
+
+  //nvxuCopyImage(context, input, base);
+  //if (debug)
+  printf("\n2");
+  FausseImage(config, context, app, base, "synthese_pont.jpg");
+  printf("\n3");
+  /// Analyse
+  cv::Mat cvmat = nvx_cv::VXImageToCVMatMapper(base, 0, 0, VX_READ_AND_WRITE, VX_MEMORY_TYPE_HOST).getMat();
+  
+  //cv::cvtColor(cvmat, cvmat, CV_BGR2GRAY);
+  cv::threshold(cvmat, cvmat, 50, 255, CV_THRESH_BINARY);
+  std::vector<std::vector<cv::Point> > contours;
+  cv::Mat contourOutput = cvmat.clone();
+  cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
+
+  //descripteur_objet* desc;
+  desc = new descripteur_objet[contours.size()];
+  for (size_t idx = 0; idx < contours.size(); idx++) {
+    desc[idx].xmin = contours[idx][0].x;
+    desc[idx].xmax = contours[idx][0].x;
+    desc[idx].ymin = contours[idx][0].y;
+    desc[idx].ymax = contours[idx][0].y;
+    for (size_t p = 0; p < contours[idx].size(); p++){
+      if (desc[idx].xmin > contours[idx][p].x) desc[idx].xmin = contours[idx][p].x;
+      if (desc[idx].xmax < contours[idx][p].x) desc[idx].xmax = contours[idx][p].x;
+      if (desc[idx].ymin > contours[idx][p].y) desc[idx].ymin = contours[idx][p].y;
+      if (desc[idx].ymax < contours[idx][p].y) desc[idx].ymax = contours[idx][p].y;
+    }
+    float tmp = (float)(desc[idx].ymax - desc[idx].ymin) / (float)(desc[idx].xmax - desc[idx].xmin);
+    desc[idx].ratiohw = tmp;
+  }
+  for (size_t idx = 0; idx < contours.size(); idx++){
+    desc[idx].spacing = 0;
+    float midx = desc[idx].xmin + ((desc[idx].xmax - desc[idx].xmin) / 2);
+    float midy = desc[idx].ymin + ((desc[idx].ymax - desc[idx].ymin) / 2);
+    for (size_t p = 0; p < contours[idx].size(); p++){
+      float tmp1 = abs(midx - contours[idx][p].x) / (desc[idx].xmax - desc[idx].xmin);
+      float tmp2 = abs(midy - contours[idx][p].y) / (desc[idx].ymax - desc[idx].ymin);
+      desc[idx].spacing += sqrt((tmp1*tmp1) + (tmp2*tmp2));
+    }
+    desc[idx].spacing = desc[idx].spacing / contours[idx].size();
+  }
+  for (size_t idx = 0; idx < contours.size(); idx++){
+    desc[idx].spacing_irregularity = 0;
+    float midx = desc[idx].xmin + ((desc[idx].xmax - desc[idx].xmin) / 2);
+    float midy = desc[idx].ymin + ((desc[idx].ymax - desc[idx].ymin) / 2);
+    for (size_t p = 0; p < contours[idx].size(); p++){
+      float tmp1 = abs(midx - contours[idx][p].x) / (desc[idx].xmax - desc[idx].xmin);
+      float tmp2 = abs(midy - contours[idx][p].y) / (desc[idx].ymax - desc[idx].ymin);
+      desc[idx].spacing_irregularity += abs(desc[idx].spacing - sqrt((tmp1*tmp1) + (tmp2*tmp2)));
+    }
+    desc[idx].spacing_irregularity /= contours[idx].size();
+  }
+
+  //Display in console :
+  if (false){
+    if (countimage == 0){
+      for (size_t idx = 0; idx < contours.size(); idx++) {
+        printf("\n Object %d : ", idx);
+        printf("\n Amplitude en X : %d (%d-%d)", desc[idx].xmax - desc[idx].xmin, desc[idx].xmin, desc[idx].xmax);
+        printf("\n Amplitude en Y : %d (%d-%d)", desc[idx].ymax - desc[idx].ymin, desc[idx].ymin, desc[idx].ymax);
+        printf("\n Ratio H/W      : %f", desc[idx].ratiohw);
+        printf("\n Spacing        : %f", desc[idx].spacing);
+        printf("\n Spacing irregularity : %f", desc[idx].spacing_irregularity);
+      }
+    }
+    countimage = (countimage + 1) % 10;
+  }
+
+  //Draw the contours
+  cv::Mat contourImage(cvmat.size(), CV_8UC3, cv::Scalar(0, 0, 0));
+  cv::Scalar colors[3];
+  colors[0] = cv::Scalar(255, 0, 0);
+  colors[1] = cv::Scalar(0, 255, 0);
+  colors[2] = cv::Scalar(0, 0, 255);
+  for (size_t idx = 0; idx < contours.size(); idx++) {
+    int color_choice = 2;
+    if (desc[idx].spacing_irregularity > 0.1) color_choice = 1;
+    if (desc[idx].xmax - desc[idx].xmin < config.frameWidth / 15){
+      if (desc[idx].ymax - desc[idx].ymin < config.frameHeight / 15){
+        color_choice = 0;
+      }
+    }
+    cv::drawContours(contourImage, contours, idx, colors[color_choice]);
+    if (color_choice == 2)
+      CopyPartialImage(config, context, base, tmp,
+        desc[idx].xmin, desc[idx].ymin, desc[idx].xmax - desc[idx].xmin, desc[idx].ymax - desc[idx].ymin);
+  }
+
+  //Display in dstImage
+  base = nvx_cv::createVXImageFromCVMat(context, contourImage);
+  
+  printf("\n4");
+  vxuColorConvert(context, tmp, right_image);
+  printf("\n5");
+  vxuColorConvert(context, base, left_image);
+  
+	// Free
+  vxReleaseImage(&base);
+  vxReleaseImage(&tmp);
+  cvmat.release();
+  contourImage.release();
+  contourOutput.release();
+}

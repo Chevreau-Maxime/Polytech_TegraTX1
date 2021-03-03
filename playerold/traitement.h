@@ -53,47 +53,33 @@ using namespace ovxio;
 #include "fonctions_utilitaires.h"
 #include "classification.h"
 
-#define SIZE_PYM 3
-
-
-bool flag_capture;
-
 
 void HelloWorld(){
 	printf("\nHello there !");
 }
 
-//Images entrée et sortie en U8
-//renvoie la petite image
-//rapport =4 pour une pym de taille 3
-//vx_pyramid pympym = vxCreatePyramid(context, SIZE_PYM, VX_SCALE_PYRAMID_HALF, config.frameWidth, config.frameHeight, VX_DF_IMAGE_S16);
-void Pyramin(const FrameSource::Parameters& config, ContextGuard& context, const vx_image& InImg, vx_image& OutImg, vx_pyramid& pympym, int rapport )
-{
-  vx_image tmpFrame = vxCreateImage(context,config.frameWidth/rapport);
-  vxuLaplacianPyramid(context,InImg,pympym,tmpFrame);
-  vxuConvertDepth(context,tmpFrame,OutImg,VX_CONVERT_POLICY_WRAP,0);
-  vxReleaseImage(&tmpFrame);
-}
-
-//Images entrée et sorties en U8
-//renvoie la grande image
-//rapport =4 pour pyramide taille 3
-void PyramOut(const FrameSource::Parameters& config, ContextGuard& context, const vx_image& InImg, vx_image& OutImg, vx_pyramid& pympym, int rapport)
-{
-  vx_image tmpFrame = vxCreateImage(context, config.frameWidth/rapport);
-  vxuConvertDepth(context, InImg, tmpFrame, VX_CONVERT_POLICY, 0);
-  vxuLaplacianReconstruct(context, pympym, tmpFrame, OutImg);
-  vxReleaseImage(&tmpFrame);
-}
 /** Fonction d'initialisation des differents parametres */
 void InitTraitement(ContextGuard& context){
 	flag_capture = true;
+	source_videos = new char*[NB_SOURCE_VIDEOS];
+	source_videos[0] = "cars.mp4";
+	source_videos[1] = "pedestrians.mp4";
+	source_videos[2] = "signs.avi";
+	selected_video = 0;
+	display_mode = 0;
 }
 
 /** Fonction a appeler pour saisir un input */
 void InputTraitement(vx_char c){
 	if (c == 'c'){
 		flag_capture = true;
+	}
+	if (c >= '1' && c < '1' + NB_SOURCE_VIDEOS){
+		selected_video = c - '1';
+	}
+	if (c == 'm'){
+		display_mode = 1 - display_mode;
+		printf("\nYes : %d", display_mode);
 	}
 }
 
@@ -224,7 +210,6 @@ void Traitement_SoustractionDeFond(const FrameSource::Parameters& config, Contex
     vxReleaseThreshold(&thresh);
 }
 
-
 /** Fonction main qui appelle les autres traitements */
 void MainTraitement(const FrameSource::Parameters& config, ContextGuard& context, Application &app, vx_image& dstImg, const vx_image& frame){
   //vx_image image_traitee = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
@@ -250,10 +235,14 @@ void MainTraitement(const FrameSource::Parameters& config, ContextGuard& context
   vx_image tmp = Classification_image_traitee(config, context, output_rgb);
 
   /// Display
-  SubplotCopy(context, output_rgb, dstImg, 2, 1, 0);
-  SubplotCopy(context, tmp, dstImg, 2, 1, 1);
-  //SubplotCopy(context, output_rgb, dstImg, 2, 1, i);
-
+  if (display_mode == 0)  {
+	  SubplotCopy(context, output_rgb, dstImg, 2, 1, 0);
+	  SubplotCopy(context, tmp, dstImg, 2, 1, 1);
+  }
+  else {
+	  SubplotCopy(context, frame, dstImg, 2, 1, 0);
+	  SubplotCopy(context, tmp, dstImg, 2, 1, 1);
+  }
 
   //nvxuCopyImage(context, output_rgb, left_image);
   //nvxuCopyImage(context, Classification_image_traitee(config, context, output_rgb), right_image);

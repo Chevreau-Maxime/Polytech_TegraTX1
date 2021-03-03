@@ -63,11 +63,14 @@ void printDescripteurs(descripteur_objet*& desc, size_t nb_desc){
 
 /* Fonction de test de descripteur */
 int validDescripteur(const FrameSource::Parameters& config, const descripteur_objet& d){
-  int res = 0;
-  if (d.spacing_irregularity > 0.12) res = 1;
-  if ((d.xmax - d.xmin < config.frameWidth / 15) & (d.ymax - d.ymin < config.frameHeight / 15)) res = 2;
-  if (abs(d.ratiohw - 1.f) > 0.5) res = 3;
-  return res;
+  //Ratio :
+  if (d.spacing_irregularity > 0.12) return DESCRIPTOR_RATIO_PB;
+  if (abs(d.ratiohw - 1.f) > 0.5) return DESCRIPTOR_RATIO_PB;
+  //Size
+  if ((d.xmax - d.xmin < config.frameWidth / 15) || (d.ymax - d.ymin < config.frameHeight / 15)) return DESCRIPTOR_SIZE_PB;
+  if ((d.xmax - d.xmin > config.frameWidth * 0.4) || (d.ymax - d.ymin > config.frameHeight * 0.4)) return DESCRIPTOR_SIZE_PB;
+  //Ok
+  return DESCRIPTOR_OK;
 }
 
 
@@ -86,9 +89,14 @@ void drawDescripteurs(const FrameSource::Parameters& config, ContextGuard& conte
   colors[2] = cv::Scalar(255, 0, 0);
   colors[3] = cv::Scalar(200, 0, 200);
   for (size_t idx = 0; idx < nb_desc; idx++) {
-    int color_choice = validDescripteur(config, desc[idx]);
-    //if (color_choice == 0)
-    cv::drawContours(contourImage, contours, idx, colors[color_choice]);  
+	int color_choice = validDescripteur(config, desc[idx]);
+
+	if (display_mode == 0){
+		cv::drawContours(contourImage, contours, idx, colors[color_choice]);
+	}
+	else if (color_choice == DESCRIPTOR_OK){
+		cv::drawContours(contourImage, contours, idx, colors[color_choice]);
+	}
   }
 
   //Display in dstImage
@@ -97,7 +105,6 @@ void drawDescripteurs(const FrameSource::Parameters& config, ContextGuard& conte
   vxReleaseImage(&tmp);
   contourImage.release();
 }
-
 
 /* Fonction qui dessine les zones des descripteurs valides de l'image input dans l'image output */
 void drawValidObjects(const FrameSource::Parameters& config, ContextGuard& context, descripteur_objet*& desc, size_t nb_desc,
@@ -108,7 +115,7 @@ void drawValidObjects(const FrameSource::Parameters& config, ContextGuard& conte
   }
 }
 
-
+/* Fonction qui prend une vx_image filtree binarisee format rgb en entree, et renvoie une vx_image rgb en sortie */
 vx_image Classification_image_traitee(const FrameSource::Parameters& config, ContextGuard& context, vx_image input_RGB){
   /// Init
   vx_df_image format; vx_uint32 width; vx_uint32 height;

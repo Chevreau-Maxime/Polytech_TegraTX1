@@ -31,49 +31,19 @@
 #include <iomanip>
 #include <memory>
 
-#define WINDOWS
-
-#ifdef WINDOWS
+#include <VX/vx.h>
+#include <NVX/nvx_timer.hpp>
 
 #include "NVXIO/Application.hpp"
 #include "NVXIO/FrameSource.hpp"
 #include "NVXIO/Render.hpp"
 #include "NVXIO/SyncTimer.hpp"
 #include "NVXIO/Utility.hpp"
-#include <NVX\nvx.h>
-#include <NVX\nvx_timer.hpp>
-
-using namespace nvxio;
-#else
-
-#include "NVX/Application.hpp"
-#include "OVX/FrameSourceOVX.hpp"
-#include "OVX/RenderOVX.hpp"
-#include "NVX/SyncTimer.hpp"
-#include "OVX/UtilityOVX.hpp"
-
-using namespace nvxio;
-using namespace ovxio;
-#endif
-
-#include "traitement.h"
 
 
-/*
-#include <VX/vx.h>
-#include <NVX/nvx_timer.hpp>
-
-#include "NVX/Application.hpp"
-#include "OVX/FrameSourceOVX.hpp"
-#include "OVX/RenderOVX.hpp"
-#include "NVX/FrameSource.hpp"
-#include "NVX/Render.hpp"
-#include "NVX/SyncTimer.hpp"
-#include "OVX/UtilityOVX.hpp"
-#include "NVX/Utility.hpp"
-*/
 
 bool flag_capture_bkg;
+
 
 struct EventData
 {
@@ -94,13 +64,36 @@ static void keyboardEventCallback(void* context, vx_char key, vx_uint32 /*x*/, v
     {
         eventData->pause = !eventData->pause;
     }
-    else if (key == 'c')
-    {
-        flag_capture_bkg=true;
+    else if (key == 'c'){
+      flag_capture_bkg = true;
     }
-    InputTraitement(key);
 }
 
+/*
+void ProcessFrame(vx_context context, vx_image frame, nvxio::FrameSource::Parameters config, vx_image resultFrame){
+  vx_image frameU8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+  vx_image frameResult = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+  vx_image defaultFrameU8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+
+  vxuColorConvert(context, frame, frameU8);
+  vxuColorConvert(context, defaultFrame, defaultFrameU8);
+  //nvxuMultiplyByScalar(context, defaultFrameU8, defaultFrameU8, 0.8f);
+  //nvxuMultiplyByScalar(context, avgFrame, avgFrame, 0.8f);
+
+
+
+  vxuAbsDiff(context, frameU8, defaultFrameU8, frameResult);
+  vxuColorConvert(context, frameResult, frame);
+
+  render->putImage(frameResult);
+  render->putTextViewport(txt.str(), style);
+
+  vxReleaseImage(&frameU8);
+  vxReleaseImage(&frameResult);
+  vxReleaseImage(&defaultFrameU8);
+}
+
+*/
 //
 // main - Application entry point
 //
@@ -109,8 +102,8 @@ int main(int argc, char** argv)
 {
     try
     {
-        Application &app = Application::get();
-        std::string input = app.findSampleFilePath("cars.mp4");
+        nvxio::Application &app = nvxio::Application::get();
+        std::string input = app.findSampleFilePath("thomas.mp4");
 
         app.setDescription("This sample plays a video from video-file or camera");
         app.addOption('s', "source", "Input URI", nvxio::OptionHandler::string(&input));
@@ -120,27 +113,27 @@ int main(int argc, char** argv)
         // Create OpenVX context
         //
 
-        ContextGuard context;
-        vxRegisterLogCallback(context, &stdoutLogCallback, vx_false_e);
+        nvxio::ContextGuard context;
+        vxRegisterLogCallback(context, &nvxio::stdoutLogCallback, vx_false_e);
 
         //
         // Create a Frame Source
         //
 
-        std::unique_ptr<FrameSource> source(createDefaultFrameSource(context, input));
+        std::unique_ptr<nvxio::FrameSource> source(nvxio::createDefaultFrameSource(context, input));
         if (!source || !source->open())
         {
             std::cerr << "Error: Can't open source URI " << input << std::endl;
             return nvxio::Application::APP_EXIT_CODE_NO_RESOURCE;
         }
-        FrameSource::Parameters config = source->getConfiguration();
+        nvxio::FrameSource::Parameters config = source->getConfiguration();
 
         //
         // Create a Render
         //
 
-        std::unique_ptr<Render> render(createDefaultRender(
-                    context, "Player Sample", config.frameWidth*2, config.frameHeight));
+        std::unique_ptr<nvxio::Render> render(nvxio::createDefaultRender(
+                    context, "Player Sample", config.frameWidth, config.frameHeight));
         if (!render)
         {
             std::cout << "Error: Cannot open default render!" << std::endl;
@@ -152,36 +145,29 @@ int main(int argc, char** argv)
 
         vx_image frame = vxCreateImage(context, config.frameWidth, config.frameHeight, config.format);
         vx_image defaultFrame = vxCreateImage(context, config.frameWidth, config.frameHeight, config.format);
+        vx_image avgFrame = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+
         flag_capture_bkg = true;
 
 
         NVXIO_CHECK_REFERENCE(frame);
 
-        Render::TextBoxStyle style = {{255,255,255,255}, {50,50,50,230}, {10,10}};
+        nvxio::Render::TextBoxStyle style = {{255,255,255,255}, {0,0,127,127}, {10,10}};
 
-        std::unique_ptr<SyncTimer> syncTimer = createSyncTimer();
+        std::unique_ptr<nvxio::SyncTimer> syncTimer = nvxio::createSyncTimer();
         syncTimer->arm(1. / app.getFPSLimit());
 
         nvx::Timer totalTimer;
         totalTimer.tic();
-
-		    ///Init
-		    vx_image dstImg = vxCreateImage(context, 2 * config.frameWidth, config.frameHeight, config.format);
-		    InitTraitement(config, context);
-
-
-        std::ostringstream txt;
-        txt << std::fixed << std::setprecision(1) << " ";
-
         while(eventData.alive)
         {
-            FrameSource::FrameStatus status = FrameSource::OK;
+            nvxio::FrameSource::FrameStatus status = nvxio::FrameSource::OK;
             if (!eventData.pause)
             {
                 status = source->fetch(frame);
                 if (flag_capture_bkg){
-                  defaultFrame = vxCreateImage(context, config.frameWidth, config.frameHeight, config.format);
                   nvxuCopyImage(context, frame, defaultFrame);
+                  nvxuCopyImage(context, frame, avgFrame);
                   flag_capture_bkg = false;
                 }
             }
@@ -192,17 +178,19 @@ int main(int argc, char** argv)
             {
                 double total_ms = totalTimer.toc();
 
-                //std::cout << "NO PROCESSING" << std::endl;
-                //std::cout << "Display Time : " << total_ms << " ms" << std::endl << std::endl;
+                std::cout << "NO PROCESSING" << std::endl;
+                std::cout << "Display Time : " << total_ms << " ms" << std::endl << std::endl;
 
                 syncTimer->synchronize();
 
                 total_ms = totalTimer.toc();
                 totalTimer.tic();
 
+                std::ostringstream txt;
+                txt << std::fixed << std::setprecision(1);
 
-                /*txt << "Source size: " << config.frameWidth << 'x' << config.frameHeight << std::endl;
-                txt << "Algorithm: " << "No Processing" << std::endl;
+                txt << "Source size: " << config.frameWidth << 'x' << config.frameHeight << std::endl;
+                txt << "Algorithm: " << "Homemade" << std::endl;
                 txt << "Display: " << total_ms  << " ms / " << 1000.0 / total_ms << " FPS" << std::endl;
 
                 txt << std::setprecision(6);
@@ -210,14 +198,49 @@ int main(int argc, char** argv)
 
                 txt << "LIMITED TO " << app.getFPSLimit() << " FPS FOR DISPLAY" << std::endl;
                 txt << "Space - pause/resume" << std::endl;
-                txt << "Esc - close the demo";*/
+                txt << "C - Capture New Background Image" << std::endl;
+                txt << "Esc - close the demo";
 
-				        //Traitement
-				        MainTraitement(config, context, app, dstImg, frame, txt);
 
-				        //Render
-                render->putImage(dstImg);
+                /* Reservoir de test : */
+
+                //vxuChannelExtract(context, frame, VX_CHANNEL_R, chR);
+                //vxuChannelExtract(context, frame, VX_CHANNEL_G, chG);
+                //vxuChannelExtract(context, frame, VX_CHANNEL_B, chB);
+                //vxuChannelCombine(context, chR, chR, chR, chR, frame);
+
+                //vxuChannelExtract(context, frame, );
+                //vxuChannelCombine(context, frameU8, 0, 0, )
+                //vxuAbsDiff(context, frame, defaultFrame, frame);
+
+                //vxuSubtract(context, frame, defaultFrame, policy, frame);
+
+                vx_uint32 W, H;
+                //W = frame.width;
+                vx_image frameU8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+                vx_image frameResult = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+                vx_image defaultFrameU8 = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+                
+                vxuColorConvert(context, frame, frameU8);
+                vxuColorConvert(context, defaultFrame, defaultFrameU8);
+                //nvxuMultiplyByScalar(context, defaultFrameU8, defaultFrameU8, 0.8f);
+                //nvxuMultiplyByScalar(context, avgFrame, avgFrame, 0.8f);
+                
+
+                //vx_image displayFrame = vxCreateImage(context, config.frameWidth, config.frameHeight, VX_DF_IMAGE_U8);
+
+                vxuAbsDiff(context, frameU8, defaultFrameU8, frameResult);
+                vxuColorConvert(context, frameResult, frame);
+
+
+
+
+                render->putImage(frameResult);
                 render->putTextViewport(txt.str(), style);
+                
+                vxReleaseImage(&frameU8);
+                vxReleaseImage(&frameResult); 
+                vxReleaseImage(&defaultFrameU8);
 
                 if (!render->flush())
                     eventData.alive = false;
@@ -236,14 +259,12 @@ int main(int argc, char** argv)
                 }
             } break;
             }
-
         }
 
         //
         // Release all objects
         //
         vxReleaseImage(&frame);
-        EndTraitement();
 
     }
     catch (const std::exception& e)
@@ -252,5 +273,5 @@ int main(int argc, char** argv)
         return nvxio::Application::APP_EXIT_CODE_ERROR;
     }
 
-    return Application::APP_EXIT_CODE_SUCCESS;
+    return nvxio::Application::APP_EXIT_CODE_SUCCESS;
 }

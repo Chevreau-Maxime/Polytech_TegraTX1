@@ -2,12 +2,27 @@
 #include "headers.h"
 #include "fonctions_utilitaires.h"
 
-/* Fonction qui construit les descripteurs */
-void getDescripteurs(const std::vector<std::vector<cv::Point> >& contours, descripteur_objet*& desc){
-  desc = new descripteur_objet[contours.size()];
 
+
+
+bool test_spacing_irregularity(float a){ return (a > THRESH_SPACING_IRR); }
+bool test_ratiohw(float a){ return (abs(a - 1.f) > THRESH_RATIO); }
+bool test_size(const FrameSource::Parameters& config, float x, float y){
+  if ((x < config.frameWidth * THRESH_MIN_SIZE_PERCENT) || (y < config.frameHeight * THRESH_MIN_SIZE_PERCENT))
+    return true;
+  if ((x > config.frameWidth * THRESH_MAX_SIZE_PERCENT) || (y > config.frameHeight * THRESH_MAX_SIZE_PERCENT))
+    return true;
+  return false;
+}
+
+
+/* Fonction qui construit les descripteurs */
+void getDescripteurs(const FrameSource::Parameters& config, const std::vector<std::vector<cv::Point> >& contours, descripteur_objet*& desc){
+  desc = new descripteur_objet[contours.size()];
+  float tmp1, tmp2, midx, midy;
   /// First Loop : Get amplitude, min, max
   for (size_t idx = 0; idx < contours.size(); idx++) {
+    desc[idx].valid = true;
     desc[idx].xmin = contours[idx][0].x;
     desc[idx].xmax = contours[idx][0].x;
     desc[idx].ymin = contours[idx][0].y;
@@ -20,30 +35,37 @@ void getDescripteurs(const std::vector<std::vector<cv::Point> >& contours, descr
     }
     float tmp = (float)(desc[idx].ymax - desc[idx].ymin) / (float)(desc[idx].xmax - desc[idx].xmin);
     desc[idx].ratiohw = tmp;
+    // eliminate already unvalid contours
+    desc[idx].valid = desc[idx].valid && !(test_size(config, desc[idx].xmax - desc[idx].xmin, desc[idx].ymax - desc[idx].ymin));
+    desc[idx].valid = desc[idx].valid && !(test_ratiohw(desc[idx].ratiohw));
   }
   /// Second Loop : Get distance from center (spacing)
   for (size_t idx = 0; idx < contours.size(); idx++){
     desc[idx].spacing = 0;
-    float midx = desc[idx].xmin + ((desc[idx].xmax - desc[idx].xmin) / 2);
-    float midy = desc[idx].ymin + ((desc[idx].ymax - desc[idx].ymin) / 2);
-    for (size_t p = 0; p < contours[idx].size(); p++){
-      float tmp1 = abs(midx - contours[idx][p].x) / (desc[idx].xmax - desc[idx].xmin);
-      float tmp2 = abs(midy - contours[idx][p].y) / (desc[idx].ymax - desc[idx].ymin);
-      desc[idx].spacing += sqrt((tmp1*tmp1) + (tmp2*tmp2));
+    if (desc[idx].valid){
+      midx = desc[idx].xmin + ((desc[idx].xmax - desc[idx].xmin) / 2);
+      midy = desc[idx].ymin + ((desc[idx].ymax - desc[idx].ymin) / 2);
+      for (size_t p = 0; p < contours[idx].size(); p++){
+        tmp1 = abs(midx - contours[idx][p].x) / (desc[idx].xmax - desc[idx].xmin);
+        tmp2 = abs(midy - contours[idx][p].y) / (desc[idx].ymax - desc[idx].ymin);
+        desc[idx].spacing += sqrt((tmp1*tmp1) + (tmp2*tmp2));
+      }
+      desc[idx].spacing = desc[idx].spacing / contours[idx].size();
     }
-    desc[idx].spacing = desc[idx].spacing / contours[idx].size();
   }
   /// Third Loop : Get standard deviation from spacing
   for (size_t idx = 0; idx < contours.size(); idx++){
     desc[idx].spacing_irregularity = 0;
-    float midx = desc[idx].xmin + ((desc[idx].xmax - desc[idx].xmin) / 2);
-    float midy = desc[idx].ymin + ((desc[idx].ymax - desc[idx].ymin) / 2);
-    for (size_t p = 0; p < contours[idx].size(); p++){
-      float tmp1 = abs(midx - contours[idx][p].x) / (desc[idx].xmax - desc[idx].xmin);
-      float tmp2 = abs(midy - contours[idx][p].y) / (desc[idx].ymax - desc[idx].ymin);
-      desc[idx].spacing_irregularity += abs(desc[idx].spacing - sqrt((tmp1*tmp1) + (tmp2*tmp2)));
+    if (desc[idx].valid){
+      midx = desc[idx].xmin + ((desc[idx].xmax - desc[idx].xmin) / 2);
+      midy = desc[idx].ymin + ((desc[idx].ymax - desc[idx].ymin) / 2);
+      for (size_t p = 0; p < contours[idx].size(); p++){
+        tmp1 = abs(midx - contours[idx][p].x) / (desc[idx].xmax - desc[idx].xmin);
+        tmp2 = abs(midy - contours[idx][p].y) / (desc[idx].ymax - desc[idx].ymin);
+        desc[idx].spacing_irregularity += abs(desc[idx].spacing - sqrt((tmp1*tmp1) + (tmp2*tmp2)));
+      }
+      desc[idx].spacing_irregularity /= contours[idx].size();
     }
-    desc[idx].spacing_irregularity /= contours[idx].size();
   }
 }
 
@@ -63,13 +85,16 @@ void printDescripteurs(descripteur_objet*& desc, size_t nb_desc){
 
 /* Fonction de test de descripteur */
 int validDescripteur(const FrameSource::Parameters& config, const descripteur_objet& d){
-  //Ratio :
-  if (d.spacing_irregularity > 0.12) return DESCRIPTOR_RATIO_PB;
-  if (abs(d.ratiohw - 1.f) > 0.5) return DESCRIPTOR_RATIO_PB;
-  //Size
-  if ((d.xmax - d.xmin < config.frameWidth / 15) || (d.ymax - d.ymin < config.frameHeight / 15)) return DESCRIPTOR_SIZE_PB;
-  if ((d.xmax - d.xmin > config.frameWidth * 0.4) || (d.ymax - d.ymin > config.frameHeight * 0.4)) return DESCRIPTOR_SIZE_PB;
-  //Ok
+  // Valid :
+  if (d.valid == false) return DESCRIPTOR_SIZE_PB;
+  // Ratio :
+  if (test_spacing_irregularity(d.spacing_irregularity))
+    return DESCRIPTOR_RATIO_PB;
+  if (test_ratiohw(d.ratiohw))
+    return DESCRIPTOR_RATIO_PB;
+  // Size :
+  if (test_size(config, d.xmax - d.xmin, d.ymax - d.ymin))
+    return DESCRIPTOR_SIZE_PB;
   return DESCRIPTOR_OK;
 }
 
@@ -108,22 +133,24 @@ void drawDescripteurs(const FrameSource::Parameters& config, ContextGuard& conte
 
 /* Fonction qui dessine les zones des descripteurs valides de l'image input dans l'image output */
 void drawValidObjects(const FrameSource::Parameters& config, ContextGuard& context, descripteur_objet*& desc, size_t nb_desc,
-  vx_image& output_image, vx_image& input_image){
+  vx_image& output_image, const vx_image& input_image){
   for (size_t idx = 0; idx < nb_desc; idx++) {
-    if (validDescripteur(config, desc[idx]) == 0) CopyPartialImage(config, context, input_image, output_image, 
-      desc[idx].xmin, desc[idx].ymin, desc[idx].xmax - desc[idx].xmin, desc[idx].ymax - desc[idx].ymin);
+    if (validDescripteur(config, desc[idx]) == DESCRIPTOR_OK) 
+      CopyPartialImage(config, context, input_image, output_image, desc[idx].xmin, desc[idx].ymin, 
+                        desc[idx].xmax - desc[idx].xmin, desc[idx].ymax - desc[idx].ymin);
   }
 }
 
 /* Fonction qui prend une vx_image filtree binarisee format rgb en entree, et renvoie une vx_image rgb en sortie */
-vx_image Classification_image_traitee(const FrameSource::Parameters& config, ContextGuard& context, vx_image input_RGB){
+vx_image Classification_image_traitee(const FrameSource::Parameters& config, ContextGuard& context, const vx_image& input_RGB, const vx_image& frame, bool mode, std::ostringstream& txt){
   /// Init
-  vx_df_image format; vx_uint32 width; vx_uint32 height;
+  vx_uint32 width; vx_uint32 height;
   vxQueryImage(input_RGB, VX_IMAGE_ATTRIBUTE_WIDTH, &width, sizeof(vx_uint32));
   vxQueryImage(input_RGB, VX_IMAGE_ATTRIBUTE_HEIGHT, &height, sizeof(vx_uint32));
   vx_image input_U8 = vxCreateImage(context, width, height, VX_DF_IMAGE_U8);
   vxuColorConvert(context, input_RGB, input_U8);
   vx_image output_rgb = vxCreateImage(context, width, height, VX_DF_IMAGE_RGBX);
+  timer_mini.tic();
   
   /// Analyse
   cv::Mat cvmat = nvx_cv::VXImageToCVMatMapper(input_U8, 0, 0, VX_READ_AND_WRITE, VX_MEMORY_TYPE_HOST).getMat();
@@ -131,12 +158,18 @@ vx_image Classification_image_traitee(const FrameSource::Parameters& config, Con
   std::vector<std::vector<cv::Point> > contours;
   cv::Mat contourOutput = cvmat.clone();
   cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
+  AddTimeToString("-finding contours : ", txt, timer_mini);
 
   /// Descripteurs
   descripteur_objet* desc = 0;
-  getDescripteurs(contours, desc);
-  drawDescripteurs(config, context, desc, contours.size(), output_rgb, contours, cvmat);
-  //drawValidObjects(config, context, desc, contours.size(), output_rgb, input_RGB);
+  getDescripteurs(config, contours, desc);
+  AddTimeToString("-calculating descriptors : ", txt, timer_mini);
+  if (mode){
+    drawValidObjects(config, context, desc, contours.size(), output_rgb, frame);
+  } else {
+    drawDescripteurs(config, context, desc, contours.size(), output_rgb, contours, cvmat);
+  }
+  AddTimeToString("-drawing contours : ", txt, timer_mini);
 
   vxReleaseImage(&input_U8);
   return output_rgb;
@@ -174,7 +207,7 @@ void Test_Classification(const FrameSource::Parameters& config, ContextGuard& co
   cv::findContours(contourOutput, contours, CV_RETR_LIST, CV_CHAIN_APPROX_NONE);
 
   /// Descripteurs
-  getDescripteurs(contours, desc);
+  getDescripteurs(config, contours, desc);
 
   /// Display in console :
   if (true){

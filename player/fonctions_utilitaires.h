@@ -67,3 +67,71 @@ void SubplotCopy(ContextGuard& context, const vx_image& src, vx_image& dst, vx_u
 
   vxReleaseImage(&target_image);
 }
+
+void InitBuffer(vx_context context, vx_uint32 Width, vx_uint32 Height)
+{
+  buf1 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf2 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf3 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf4 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf5 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf6 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf7 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf8 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf9 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf10 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf11 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_U8);
+  buf12 = vxCreateImage(context, Width, Height, VX_DF_IMAGE_RGBX);
+}
+
+void ReleaseBuffer()
+{
+  vxReleaseImage(&buf1);
+  vxReleaseImage(&buf2);
+  vxReleaseImage(&buf3);
+  vxReleaseImage(&buf4);
+  vxReleaseImage(&buf5);
+  vxReleaseImage(&buf6);
+  vxReleaseImage(&buf7);
+  vxReleaseImage(&buf8);
+  vxReleaseImage(&buf9);
+  vxReleaseImage(&buf10);
+  vxReleaseImage(&buf11);
+  vxReleaseImage(&buf12);
+}
+
+
+
+//rapport /4 entre in et out
+// images en U8
+// renvoie la petite image
+// vx_pyramid pympym = vxCreatePyramid(context, SIZE_PYM, VX_SCALE_PYRAMID_HALF, config.frameWidth, config.frameHeight, VX_DF_IMAGE_S16);
+void PyramIn(const nvxio::FrameSource::Parameters& config, nvxio::ContextGuard& context, vx_image& InImg, const vx_image& OutImg, vx_pyramid& pympym)
+{
+  vx_uint32 width; vx_uint32 height;
+  vxQueryImage(InImg, VX_IMAGE_ATTRIBUTE_WIDTH, &width, sizeof(vx_uint32));
+  vxQueryImage(InImg, VX_IMAGE_ATTRIBUTE_HEIGHT, &height, sizeof(vx_uint32));
+
+  vx_image tmpFrame = vxCreateImage(context, width / 4, height / 4, VX_DF_IMAGE_S16);
+  vxuLaplacianPyramid(context, InImg, pympym, tmpFrame);
+  vxuConvertDepth(context, tmpFrame, OutImg, VX_CONVERT_POLICY_WRAP, 0);
+  vxReleaseImage(&tmpFrame);
+}
+
+// rapport x4 entre in et out
+// images en U8
+// renvoie la grande image
+void PyramOut(const nvxio::FrameSource::Parameters& config, nvxio::ContextGuard& context, vx_image& InImg, const vx_image& OutImg, vx_pyramid& pympym)
+{
+  vx_image tmpFrame = vxCreateImage(context, config.frameWidth / 4, config.frameHeight / 4, VX_DF_IMAGE_S16);
+  vxuConvertDepth(context, InImg, tmpFrame, VX_CONVERT_POLICY_WRAP, 0);
+  vxuLaplacianReconstruct(context, pympym, tmpFrame, OutImg);
+  vxReleaseImage(&tmpFrame);
+}
+
+/* Fonction qui effectue le tic et le toc de la var globale timer, 
+et ajoute le string de texte au ostringstream en param*/
+void AddTimeToString(const char* name, std::ostringstream& txt, nvx::Timer& t){
+  txt << name << t.toc() << "ms" << std::endl;
+  t.tic();
+}
